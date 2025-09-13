@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>STYLE PRO - Virtual Hairstyle Try-On</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/feather-icons"></script>
+    <script src="https://cdn.jsdelivr.net/npm/feather-icons/dist/feather.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/tensorflow/tfjs@latest"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/face-landmarks-detection@0.0.1/dist/face-landmarks-detection.js"></script>
+    <style>
+        .loading-screen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: white;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            font-family: 'Playfair Display', serif;
+        }
+        .gold-text {
+            color: #D4AF37;
+            font-size: 3rem;
+            font-weight: 700;
+            text-shadow: 1px 1px 3px rgba(0,0,0,0.2);
+        }
+        .hairstyle-card {
+            transition: transform 0.3s ease;
+        }
+        .hairstyle-card:hover {
+            transform: scale(1.05);
+        }
+        .watermark-container {
+            overflow-x: auto;
+            scroll-behavior: smooth;
+        }
+        .watermark-container::-webkit-scrollbar {
+            display: none;
+        }
+        .camera-container {
+            position: relative;
+            overflow: hidden;
+            border-radius: 10px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+        }
+        .canvas-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body class="bg-gray-50">
+    <!-- Loading Screen -->
+    <div id="loadingScreen" class="loading-screen">
+        <h1 class="gold-text">STYLE PRO</h1>
+    </div>
+
+    <!-- Gender Selection Screen -->
+    <div id="genderSelection" class="hidden fixed inset-0 bg-white flex flex-col justify-center items-center p-6 z-50">
+        <h2 class="text-3xl font-bold mb-8 text-gray-800">Select Your Gender</h2>
+        <div class="flex flex-col md:flex-row gap-6">
+            <button onclick="selectGender('male')" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-4 px-8 rounded-lg shadow-lg transition-all duration-300 transform hover:scale-105">
+                <i data-feather="user" class="w-8 h-8 mb-2 mx-auto"></i>
+                <span class="text-xl">Male</span>
+            </button>
+            <button onclick="selectGender('female')" class="bg-pink-500 hover:bg-pink-600 text-white font-bold py-4 px-8 rounded-lg shadow-lg transition-all duration-300 transform hover:scale-105">
+                <i data-feather="user" class="w-8 h-8 mb-2 mx-auto"></i>
+                <span class="text-xl">Female</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- Main App Interface -->
+    <div id="app" class="hidden min-h-screen p-4 md:p-8">
+        <div class="max-w-6xl mx-auto">
+            <header class="flex justify-between items-center mb-8">
+                <h1 class="text-2xl md:text-3xl font-bold text-gray-800">STYLE PRO</h1>
+                <div class="flex gap-4">
+                    <button id="searchBtn" class="bg-gray-200 hover:bg-gray-300 text-gray-800 px-4 py-2 rounded-lg flex items-center gap-2">
+                        <i data-feather="search"></i>
+                        <span>Search</span>
+                    </button>
+                    <button id="saveBtn" class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg flex items-center gap-2">
+                        <i data-feather="download"></i>
+                        <span>Save</span>
+                    </button>
+                </div>
+            </header>
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
+                <!-- Camera Preview -->
+                <div class="camera-container bg-gray-200 aspect-[3/4] relative">
+                    <video id="video" class="w-full h-full object-cover" autoplay playsinline></video>
+                    <canvas id="canvas" class="canvas-overlay w-full h-full"></canvas>
+                </div>
+
+                <!-- Hairstyle Selection -->
+                <div class="bg-white rounded-xl shadow-lg p-6">
+                    <h2 class="text-xl font-bold mb-4 text-gray-800">Select Hairstyle</h2>
+                    <div id="searchContainer" class="hidden mb-6">
+                        <div class="flex gap-2 mb-4">
+                            <button id="nameSearchBtn" class="bg-blue-500 text-white px-4 py-2 rounded-lg">Search by Name</button>
+                            <button id="imageSearchBtn" class="bg-purple-500 text-white px-4 py-2 rounded-lg">Search by Image</button>
+                        </div>
+                        <div id="nameSearchContainer" class="hidden">
+                            <input type="text" id="hairstyleName" placeholder="Enter hairstyle name" class="w-full p-2 border rounded-lg mb-2">
+                            <button id="searchByNameBtn" class="bg-blue-500 text-white px-4 py-2 rounded-lg">Search</button>
+                        </div>
+                        <div id="imageSearchContainer" class="hidden">
+                            <input type="file" id="hairstyleImage" accept="image/*" class="w-full mb-2">
+                            <button id="searchByImageBtn" class="bg-purple-500 text-white px-4 py-2 rounded-lg">Search</button>
+                        </div>
+                        <div id="searchResult" class="mt-4 hidden"></div>
+                    </div>
+                    
+                    <div class="watermark-container flex gap-4 pb-4 mb-6 overflow-x-auto">
+                        <!-- Hairstyle thumbnails will be added here dynamically -->
+                    </div>
+                    
+                    <div class="grid grid-cols-3 gap-4" id="hairstyleGrid">
+                        <!-- Hairstyle options will be added here dynamically -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Search Modal -->
+    <div id="searchModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div class="bg-white rounded-lg p-6 max-w-md w-full">
+            <h3 class="text-xl font-bold mb-4">Search Hairstyle</h3>
+            <div class="flex gap-2 mb-4">
+                <button id="modalNameSearchBtn" class="bg-blue-500 text-white px-4 py-2 rounded-lg">Search by Name</button>
+                <button id="modalImageSearchBtn" class="bg-purple-500 text-white px-4 py-2 rounded-lg">Search by Image</button>
+            </div>
+            <div id="modalNameSearchContainer" class="hidden">
+                <input type="text" id="modalHairstyleName" placeholder="Enter hairstyle name" class="w-full p-2 border rounded-lg mb-2">
+                <button id="modalSearchByNameBtn" class="bg-blue-500 text-white px-4 py-2 rounded-lg">Search</button>
+            </div>
+            <div id="modalImageSearchContainer" class="hidden">
+                <input type="file" id="modalHairstyleImage" accept="image/*" class="w-full mb-2">
+                <button id="modalSearchByImageBtn" class="bg-purple-500 text-white px-4 py-2 rounded-lg">Search</button>
+            </div>
+            <div id="modalSearchResult" class="mt-4 hidden"></div>
+            <button id="closeSearchModal" class="mt-4 bg-gray-200 text-gray-800 px-4 py-2 rounded-lg">Close</button>
+        </div>
+    </div>
+
+    <script>
+        // Sample hairstyle datasets
+        const hairstyles = {
+            male: [
+                { id: 'm1', name: 'Classic Crew Cut', image: 'http://static.photos/male/320x240/101' },
+                { id: 'm2', name: 'Modern Pompadour', image: 'http://static.photos/male/320x240/102' },
+                { id: 'm3', name: 'Textured Quiff', image: 'http://static.photos/male/320x240/103' },
+                { id: 'm4', name: 'Undercut', image: 'http://static.photos/male/320x240/104' },
+                { id: 'm5', name: 'Fade', image: 'http://static.photos/male/320x240/105' },
+                { id: 'm6', name: 'Side Part', image: 'http://static.photos/male/320x240/106' },
+                { id: 'm7', name: 'Buzz Cut', image: 'http://static.photos/male/320x240/107' },
+                { id: 'm8', name: 'Long Layers', image: 'http://static.photos/male/320x240/108' }
+            ],
+            female: [
+                { id: 'f1', name: 'Long Layers', image: 'http://static.photos/female/320x240/201' },
+                { id: 'f2', name: 'Bob Cut', image: 'http://static.photos/female/320x240/202' },
+                { id: 'f3', name: 'Pixie Cut', image: 'http://static.photos/female/320x240/203' },
+                { id: 'f4', name: 'Lob', image: 'http://static.photos/female/320x240/204' },
+                { id: 'f5', name: 'Shag Cut', image: 'http://static.photos/female/320x240/205' },
+                { id: 'f6', name: 'Blunt Cut', image: 'http://static.photos/female/320x240/206' },
+                { id: 'f7', name: 'Curtain Bangs', image: 'http://static.photos/female/320x240/207' },
+                { id: 'f8', name: 'Braided Updo', image: 'http://static.photos/female/320x240/208' }
+            ]
+        };
+
+        let currentGender = null;
+        let selectedHairstyle = null;
+        let model = null;
+
+        // DOM elements
+        const loadingScreen = document.getElementById('loadingScreen');
+        const genderSelection = document.getElementById('genderSelection');
+        const app = document.getElementById('app');
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const hairstyleGrid = document.getElementById('hairstyleGrid');
+        const watermarkContainer = document.querySelector('.watermark-container');
+        const searchBtn = document.getElementById('searchBtn');
+        const saveBtn = document.getElementById('saveBtn');
+        const searchModal = document.getElementById('searchModal');
+        const closeSearchModal = document.getElementById('closeSearchModal');
+
+        // Simulate loading
+        setTimeout(() => {
+            loadingScreen.style.display = 'none';
+            genderSelection.classList.remove('hidden');
+            feather.replace();
+        }, 2000);
+
+        // Gender selection
+        function selectGender(gender) {
+            currentGender = gender;
+            genderSelection.classList.add('hidden');
+            app.classList.remove('hidden');
+            loadHairstyles(gender);
+            startCamera();
+            initFaceDetection();
+        }
+
+        // Load hairstyles based on gender
+        function loadHairstyles(gender) {
+            hairstyleGrid.innerHTML = '';
+            watermarkContainer.innerHTML = '';
+            
+            hairstyles[gender].forEach(style => {
+                // Add to grid
+                const card = document.createElement('div');
+                card.className = 'hairstyle-card bg-white rounded-lg overflow-hidden shadow-md cursor-pointer';
+                card.innerHTML = `
+                    <img src="${style.image}" alt="${style.name}" class="w-full h-32 object-cover">
+                    <div class="p-2">
+                        <h3 class="text-sm font-medium text-center">${style.name}</h3>
+                    </div>
+                `;
+                card.addEventListener('click', () => selectHairstyle(style));
+                hairstyleGrid.appendChild(card);
+                
+                // Add to watermark carousel
+                const thumb = document.createElement('div');
+                thumb.className = 'flex-shrink-0 w-16 h-16 rounded-full overflow-hidden border-2 border-white shadow-md';
+                thumb.innerHTML = `<img src="${style.image}" alt="${style.name}" class="w-full h-full object-cover">`;
+                thumb.addEventListener('click', () => selectHairstyle(style));
+                watermarkContainer.appendChild(thumb);
+            });
+        }
+
+        // Select hairstyle
+        function selectHairstyle(style) {
+            selectedHairstyle = style;
+            // In a real app, this would apply the hairstyle to the face detection
+            alert(`Selected: ${style.name}. In a real app, this would apply the hairstyle to your live video.`);
+        }
+
+        // Start camera
+        async function startCamera() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                video.srcObject = stream;
+                video.onloadedmetadata = () => {
+                    canvas.width = video.videoWidth;
+                    canvas.height = video.videoHeight;
+                };
+            } catch (err) {
+                console.error("Error accessing camera:", err);
+                alert("Could not access the camera. Please ensure you've granted camera permissions.");
+            }
+        }
+
+        // Initialize face detection (simplified)
+        async function initFaceDetection() {
+            // In a real app, we would load TensorFlow.js models here
+            console.log("Initializing face detection...");
+            
+            // This is a placeholder for actual face detection implementation
+            // Real implementation would use TensorFlow.js or similar
+            model = {
+                detect: async () => {
+                    return [{ 
+                        box: [100, 100, 200, 200],
+                        landmarks: [[150, 150], [170, 150], [160, 170]]
+                    }];
+                }
+            };
+        }
+
+        // Search functionality
+        searchBtn.addEventListener('click', () => {
+            searchModal.classList.remove('hidden');
+        });
+
+        closeSearchModal.addEventListener('click', () => {
+            searchModal.classList.add('hidden');
+        });
+
+        document.getElementById('modalNameSearchBtn').addEventListener('click', () => {
+            document.getElementById('modalNameSearchContainer').classList.remove('hidden');
+            document.getElementById('modalImageSearchContainer').classList.add('hidden');
+        });
+
+        document.getElementById('modalImageSearchBtn').addEventListener('click', () => {
+            document.getElementById('modalImageSearchContainer').classList.remove('hidden');
+            document.getElementById('modalNameSearchContainer').classList.add('hidden');
+        });
+
+        document.getElementById('modalSearchByNameBtn').addEventListener('click', () => {
+            const name = document.getElementById('modalHairstyleName').value.toLowerCase();
+            const resultContainer = document.getElementById('modalSearchResult');
+            resultContainer.innerHTML = '';
+            
+            const allStyles = [...hairstyles.male, ...hairstyles.female];
+            const found = allStyles.filter(style => 
+                style.name.toLowerCase().includes(name)
+            );
+            
+            if (found.length > 0) {
+                resultContainer.innerHTML = '<h4 class="font-bold mb-2">Results:</h4>';
+                found.forEach(style => {
+                    const div = document.createElement('div');
+                    div.className = 'mb-2 p-2 bg-gray-100 rounded cursor-pointer';
+                    div.textContent = style.name;
+                    div.addEventListener('click', () => {
+                        selectHairstyle(style);
+                        searchModal.classList.add('hidden');
+                    });
+                    resultContainer.appendChild(div);
+                });
+            } else {
+                resultContainer.innerHTML = '<p class="text-red-500">Hairstyle not found</p>';
+            }
+            
+            resultContainer.classList.remove('hidden');
+        });
+
+        document.getElementById('modalSearchByImageBtn').addEventListener('click', () => {
+            const fileInput = document.getElementById('modalHairstyleImage');
+            const resultContainer = document.getElementById('modalSearchResult');
+            
+            if (fileInput.files.length === 0) {
+                resultContainer.innerHTML = '<p class="text-red-500">Please select an image</p>';
+                resultContainer.classList.remove('hidden');
+                return;
+            }
+            
+            // In a real app, this would use image recognition to find similar hairstyles
+            resultContainer.innerHTML = '<p class="text-red-500">Invalid picture or hairstyle not found</p>';
+            resultContainer.classList.remove('hidden');
+        });
+
+        // Save functionality
+        saveBtn.addEventListener('click', () => {
+            if (!selectedHairstyle) {
+                alert('Please select a hairstyle first');
+                return;
+            }
+            
+            // In a real app, this would capture the canvas with the applied hairstyle
+            alert(`Saving image with ${selectedHairstyle.name}. In a real app, this would save the image.`);
+        });
+
+        // Initialize feather icons
+        feather.replace();
+    </script>
+</body>
+</html>
+
+
